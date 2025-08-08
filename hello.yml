@@ -1,29 +1,39 @@
-name: Build Android APK
-
+name: Hello
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-apk:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
+      - name: Checkout (ok if empty)
+        uses: actions/checkout@v4
 
-      - name: Set up JDK
-        uses: actions/setup-java@v1
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
         with:
-          java-version: 11
+          distribution: temurin
+          java-version: "17"
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      - name: Build APK
-        run: ./gradlew assembleRelease
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v2
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
         with:
-          name: app-release.apk
-          path: app/build/outputs/apk/release/app-release.apk
+          flutter-version: stable
+          channel: stable
+
+      - name: Create a sample Flutter app (so we can build)
+        run: flutter create clearpix_ai
+
+      - name: Get packages
+        working-directory: clearpix_ai
+        run: flutter pub get
+
+      - name: Build APK (release)
+        working-directory: clearpix_ai
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clearpix-ai-apk
+          path: clearpix_ai/build/app/outputs/flutter-apk/app-release.apk
