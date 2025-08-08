@@ -1,5 +1,7 @@
 name: Build Test APK
-on: { workflow_dispatch: {} }
+
+on:
+  workflow_dispatch:
 
 jobs:
   build:
@@ -14,20 +16,16 @@ jobs:
         with:
           flutter-version: stable
           channel: stable
-
       - name: Create project
         run: flutter create clearpix_ai
-
       - name: Get packages
         working-directory: clearpix_ai
         run: flutter pub get
-
       - name: Build APK
         working-directory: clearpix_ai
         run: flutter build apk --release
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: test-apk
-          path: clearpix_ai/build/app/outputs/flutter-apk/app-release.apk 
+          path: clearpix_ai/build/app/outputs/flutter-apk/app-release.apk
