@@ -1,0 +1,139 @@
+name: Build Android APK
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version: stable, channel: stable }
+
+      - name: Create Flutter project
+        run: flutter create clearpix_ai
+
+      - name: Add dependencies
+        working-directory: clearpix_ai
+        run: flutter pub add google_mobile_ads
+
+      - name: Add app code
+        working-directory: clearpix_ai
+        run: |
+          mkdir -p lib/ui lib/ads lib/services
+          cat > lib/main.dart <<'DART'
+import 'package:flutter/material.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'ads/ad_manager.dart';
+import 'services/save_gate.dart';
+import 'ui/home.dart';
+void main() async { WidgetsFlutterBinding.ensureInitialized(); await MobileAds.instance.initialize(); runApp(ClearPixApp()); }
+class ClearPixApp extends StatelessWidget {
+  @override Widget build(BuildContext context) => MaterialApp(
+    title: 'ClearPix AI',
+    theme: ThemeData(useMaterial3: true, colorScheme: ColorScheme.fromSeed(seedColor: Color(0xFF5B42F3))),
+    darkTheme: ThemeData(useMaterial3: true, brightness: Brightness.dark, colorScheme: ColorScheme.fromSeed(seedColor: Color(0xFF5B42F3))),
+    home: HomeScreen(), debugShowCheckedModeBanner: false);
+}
+DART
+          cat > lib/ui/home.dart <<'DART'
+import 'package:flutter/material.dart';
+import '../ads/ad_manager.dart';
+import '../services/save_gate.dart';
+import 'tabs.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+class HomeScreen extends StatefulWidget { @override State<HomeScreen> createState() => _HomeScreenState(); }
+class _HomeScreenState extends State<HomeScreen> {
+  BannerAd? _banner;
+  @override void initState(){ super.initState(); _banner = AdManager.loadBanner(setState); AdManager.preloadInterstitial(); SaveGate.preloadRewarded(); }
+  @override void dispose(){ _banner?.dispose(); AdManager.disposeInterstitial(); SaveGate.disposeRewarded(); super.dispose(); }
+  @override Widget build(BuildContext context)=>DefaultTabController(
+    length: 6,
+    child: Scaffold(
+      appBar: AppBar(title: const Text('ClearPix AI: Photo Editor & Enhancer'), bottom: const TabBar(isScrollable:true, tabs:[
+        Tab(text:'Enhance'),Tab(text:'Edit'),Tab(text:'Effects'),Tab(text:'Retouch'),Tab(text:'BG & Object'),Tab(text:'Create'),
+      ])),
+      body: Column(children:[
+        const Expanded(child: TabsView()),
+        if(_banner!=null) SizedBox(height:_banner!.size.height.toDouble(), width:_banner!.size.width.toDouble(), child: AdWidget(ad:_banner!)),
+      ]),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () async { final ok = await SaveGate.saveWithAd(context);
+          if(!mounted) return; ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ok?'Saved!':'Save canceled'))); },
+        label: const Text('Save (Watch Ad)'), icon: const Icon(Icons.save)),
+    ));
+}
+DART
+          cat > lib/ui/tabs.dart <<'DART'
+import 'package:flutter/material.dart'; import '../ads/ad_manager.dart';
+class TabsView extends StatelessWidget { const TabsView({super.key});
+  @override Widget build(BuildContext context)=>TabBarView(children:[
+    _p('Enhance (AI)'),_p('Edit'),_p('Effects'),_p('Retouch'),_p('BG & Object'),_p('Create'),]);
+  static Widget _p(String t)=>Center(child:Column(mainAxisAlignment:MainAxisAlignment.center,children:[
+    Icon(Icons.photo,size:64,color:Colors.grey.shade600), SizedBox(height:12),
+    Text(t,style:TextStyle(fontSize:18)), SizedBox(height:8),
+    Text('UI placeholder — wire tools here.\nAds + save gate already working.', textAlign:TextAlign.center),
+    SizedBox(height:20),
+    ElevatedButton(onPressed: AdManager.showInterstitial, child: Text('Try Interstitial')),
+  ]));}
+DART
+          cat > lib/ads/ad_manager.dart <<'DART'
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+class AdManager {
+  static const bannerId = 'ca-app-pub-4348788526300313/5974149239';
+  static const interstitialId = 'ca-app-pub-4348788526300313/9818041386';
+  static InterstitialAd? _i;
+  static BannerAd? loadBanner(Function(void Function()) setState){
+    final ad = BannerAd(size: AdSize.banner, adUnitId: bannerId, request: const AdRequest(),
+      listener: BannerAdListener(onAdLoaded:(_)=>setState((){}), onAdFailedToLoad:(a,e)=>a.dispose()));
+    ad.load(); return ad;
+  }
+  static void preloadInterstitial(){ InterstitialAd.load(adUnitId: interstitialId, request: const AdRequest(),
+    adLoadCallback: InterstitialAdLoadCallback(onAdLoaded:(ad)=>_i=ad,onAdFailedToLoad:(_)=>_i=null)); }
+  static void showInterstitial(){ if(_i==null) return;
+    _i!.fullScreenContentCallback = FullScreenContentCallback(
+      onAdDismissedFullScreenContent:(ad){ad.dispose();preloadInterstitial();},
+      onAdFailedToShowFullScreenContent:(ad,e){ad.dispose();preloadInterstitial();},);
+    _i!.show(); _i=null;
+  }
+  static void disposeInterstitial(){ _i?.dispose(); _i=null; }
+}
+DART
+          cat > lib/services/save_gate.dart <<'DART'
+import 'package:flutter/material.dart'; import 'package:google_mobile_ads/google_mobile_ads.dart';
+class SaveGate {
+  static const rewardedId='ca-app-pub-4348788526300313/6880855035'; static RewardedAd? _r;
+  static void preloadRewarded(){ RewardedAd.load(adUnitId: rewardedId, request: const AdRequest(),
+    rewardedAdLoadCallback: RewardedAdLoadCallback(onAdLoaded:(ad)=>_r=ad,onAdFailedToLoad:(_)=>_r=null)); }
+  static Future<bool> saveWithAd(BuildContext c) async{
+    if(_r==null){ ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text('Ad not ready — try again.'))); preloadRewarded(); return false; }
+    var ok=false; _r!.fullScreenContentCallback = FullScreenContentCallback(
+      onAdDismissedFullScreenContent:(ad){ad.dispose();preloadRewarded();},
+      onAdFailedToShowFullScreenContent:(ad,e){ad.dispose();preloadRewarded();},);
+    await _r!.show(onUserEarnedReward:(ad,reward) async{ ok=true; }); _r=null; return ok;
+  }
+  static void disposeRewarded(){ _r?.dispose(); _r=null; }
+}
+DART
+
+      - name: Inject AdMob App ID
+        working-directory: clearpix_ai
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          sed -i '/<application/a \ \ \ \ <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-4348788526300313~7056146678" />' $MANIFEST
+
+      - name: Get packages
+        working-directory: clearpix_ai
+        run: flutter pub get
+
+      - name: Build APK
+        working-directory: clearpix_ai
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: clearpix-ai-apk
+          path: clearpix_ai/build/app/outputs/flutter-apk/app-release.apk
