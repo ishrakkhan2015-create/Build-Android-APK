@@ -1,40 +1,42 @@
 name: Build Android APK
+
 on:
   workflow_dispatch:
 
 jobs:
-  build-apk:
+  build:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout (ok if empty)
-        uses: actions/checkout@v4
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
+    steps:
+      # Checkout your code
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # Set up Java (Android needs Java 17 for latest Gradle)
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: 17
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      # Cache Gradle dependencies (speeds up builds)
+      - name: Cache Gradle packages
+        uses: actions/cache@v3
         with:
-          channel: stable
-          flutter-version: stable
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
 
-      # Create a sample Flutter app (if you don’t have app code yet)
-      - name: Create project
-        run: flutter create clearpix_ai
-
-      - name: Get packages
-        working-directory: clearpix_ai
-        run: flutter pub get
-
+      # Build the APK
       - name: Build APK
-        working-directory: clearpix_ai
-        run: flutter build apk --release
+        run: ./gradlew assembleDebug
 
+      # Upload the APK as a build artifact
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
-          name: clearpix-ai-apk
-          path: clearpix_ai/build/app/outputs/flutter-apk/app-release.apk
+          name: app-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
