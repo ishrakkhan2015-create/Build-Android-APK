@@ -8,35 +8,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout your code
-      - name: Checkout
-        uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      # Set up Java (Android needs Java 17 for latest Gradle)
       - name: Set up JDK 17
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: '17'
 
-      # Cache Gradle dependencies (speeds up builds)
-      - name: Cache Gradle packages
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+      # Uses Gradle’s official action (handles caching & wrapper nicely)
+      - name: Prepare Gradle
+        uses: gradle/actions/setup-gradle@v3
 
-      # Build the APK
-      - name: Build APK
+      # If your project is NOT at repo root, set working-directory below to that folder
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Build debug APK
         run: ./gradlew assembleDebug
 
-      # Upload the APK as a build artifact
-      - name: Upload APK
-        uses: actions/upload-artifact@v3
+      - name: Collect APKs
+        run: |
+          mkdir -p apks
+          # copy any produced APKs into apks/
+          find . -path "*/build/outputs/apk/*/*.apk" -exec cp {} apks/ \; || true
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
         with:
-          name: app-debug.apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: android-apks
+          path: apks/*
